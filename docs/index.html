@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel Maestro de Licencias</title>
+    <script>
+      (function() {
+        try {
+          let _fetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              return _fetch;
+            },
+            set: function(v) {
+              _fetch = v;
+            }
+          });
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-BBAKHdBN.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DCfybu7L.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+
