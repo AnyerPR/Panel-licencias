@@ -1,15 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User } from 'firebase/auth';
 import { authService } from '../services/authService';
 import { AdminUser } from '../types';
 
 interface AuthContextType {
-  user: User | null;
+  user: AdminUser | null;
   adminProfile: AdminUser | null;
   loading: boolean;
   existenAdmins: boolean;
   login: (correo: string, pass: string) => Promise<AdminUser>;
-  loginConGoogle: () => Promise<AdminUser>;
+  loginAccesoRapido: (nombre?: string, correo?: string) => Promise<AdminUser>;
   logout: () => Promise<void>;
   registrarPrimerAdmin: (nombre: string, correo: string, pass: string) => Promise<AdminUser>;
   recargarEstadoAdmins: () => Promise<void>;
@@ -18,7 +17,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [adminProfile, setAdminProfile] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [existenAdmins, setExistenAdmins] = useState<boolean>(true);
@@ -36,33 +34,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Comprobar si existen admins registrados al iniciar
     recargarEstadoAdmins();
 
-    // Escuchar el estado de autenticación en Firebase Auth
-    const unsubscribe = authService.observarEstadoAuth(async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        let perfil = await authService.obtenerPerfilAdmin(firebaseUser.uid);
-        
-        // Auto-inicializar si no existe perfil de admin
-        if (!perfil) {
-          const existen = await authService.existenAdmins();
-          if (!existen || firebaseUser.email?.toLowerCase() === 'anyerperezrodrigues@gmail.com') {
-            try {
-              perfil = await authService.autoInicializarAdmin(firebaseUser);
-              setExistenAdmins(true);
-            } catch (err) {
-              console.error('Error auto-inicializando perfil de admin:', err);
-            }
-          }
-        }
-
-        if (perfil && perfil.activo) {
-          setAdminProfile(perfil);
-        } else {
-          setAdminProfile(null);
-        }
-      } else {
-        setAdminProfile(null);
-      }
+    // Escuchar el estado de autenticación autónomo
+    const unsubscribe = authService.observarEstadoAuth((admin) => {
+      setAdminProfile(admin);
       setLoading(false);
     });
 
@@ -81,10 +55,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginConGoogle = async () => {
+  const loginAccesoRapido = async (nombre?: string, correo?: string) => {
     setLoading(true);
     try {
-      const perfil = await authService.loginConGoogle();
+      const perfil = await authService.loginAccesoRapidoAdmin(nombre, correo);
       setAdminProfile(perfil);
       setExistenAdmins(true);
       return perfil;
@@ -101,7 +75,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         await authService.logout();
       }
-      setUser(null);
       setAdminProfile(null);
     } finally {
       setLoading(false);
@@ -123,12 +96,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: adminProfile,
         adminProfile,
         loading,
         existenAdmins,
         login,
-        loginConGoogle,
+        loginAccesoRapido,
         logout,
         registrarPrimerAdmin,
         recargarEstadoAdmins

@@ -17,7 +17,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
             <Shield className="w-8 h-8" />
           </div>
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs text-slate-400 font-medium">Verificando sesión con Firebase Auth...</p>
+          <p className="text-xs text-slate-400 font-medium">Verificando sesión de administrador...</p>
         </div>
       </div>
     );
