@@ -1,0 +1,6 @@
+{
+  "name": "Panel Maestro de Licencias",
+  "description": "Panel de administración de licencias, clientes, instalaciones y versiones para el Sistema de Gestión de Inventario Médico y Farmacéutico.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
