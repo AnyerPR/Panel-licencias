@@ -1,28 +1,54 @@
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  query,
+  orderBy,
+  limit as firestoreLimit,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { LogAuditoria } from '../types';
 
-const API_BASE = '/api/v1/audit';
-
-/**
- * Servicio de Auditoría para registrar y consultar acciones del sistema.
- * Se comunica exclusivamente a través de la API Express (/api/v1/audit).
- */
 export const auditService = {
   /**
-   * Obtiene la lista de registros de auditoría
+   * Obtiene la lista de registros de auditoría directamente desde Firestore
    */
   async obtenerLogs(limite: number = 100): Promise<LogAuditoria[]> {
     try {
-      const response = await fetch(`${API_BASE}?limit=${limite}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al obtener registros de auditoría.');
+      // 1. Intentar API si existe
+      try {
+        const response = await fetch(`/api/v1/audit?limit=${limite}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.exito && Array.isArray(resData.data)) {
+            return resData.data as LogAuditoria[];
+          }
+        }
+      } catch {
+        // Fallback a Firestore
       }
 
-      return resData.data as LogAuditoria[];
+      // 2. Conexión Directa a Firestore
+      const audRef = collection(db, 'auditoria');
+      try {
+        const q = query(audRef, orderBy('fecha', 'desc'), firestoreLimit(limite));
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as LogAuditoria[];
+      } catch {
+        const snap = await getDocs(audRef);
+        return snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as LogAuditoria[];
+      }
     } catch (error) {
       console.error('Error consultando registros de auditoría:', error);
       return [];
@@ -30,7 +56,7 @@ export const auditService = {
   },
 
   /**
-   * Registra un evento en la colección de auditoría a través de la API
+   * Registra un evento en la colección de auditoría directamente en Firestore
    */
   async registrarAccion(
     usuarioUid: string,
@@ -41,20 +67,23 @@ export const auditService = {
     exito: boolean = true
   ): Promise<void> {
     try {
-      await fetch(API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usuarioUid,
-          usuarioCorreo,
-          accion,
-          modulo,
-          detalles,
-          exito,
-        }),
+      const logId = doc(collection(db, 'auditoria')).id;
+      const logData = {
+        usuarioUid: usuarioUid || 'admin_uid',
+        usuarioCorreo: usuarioCorreo || 'admin@panelmaestro.com',
+        accion,
+        modulo,
+        detalles,
+        exito,
+        fecha: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, 'auditoria', logId), {
+        ...logData,
+        fechaTimestamp: serverTimestamp(),
       });
     } catch (error) {
-      console.error('Error guardando registro de auditoría en la API:', error);
+      console.warn('Error guardando registro de auditoría en Firestore:', error);
     }
   },
 };

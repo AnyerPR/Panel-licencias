@@ -1,12 +1,46 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { Cliente, EstadoCliente } from '../types';
+import { auditService } from './auditService';
 
-const API_BASE = '/api/v1/clients';
+function formatearCliente(docId: string, data: any): Cliente {
+  return {
+    id: docId,
+    uuidCliente: data.uuidCliente || docId,
+    nombreEmpresa: data.nombreEmpresa || 'Empresa Sin Nombre',
+    nombreComercial: data.nombreComercial || '',
+    rnc: data.rnc || '',
+    telefono: data.telefono || '',
+    correo: data.correo || '',
+    direccion: data.direccion || '',
+    ciudad: data.ciudad || '',
+    pais: data.pais || '',
+    personaContacto: data.personaContacto || '',
+    plan: data.plan || 'anual',
+    tipo: data.tipo || 'hospital',
+    estado: data.estado || 'activo',
+    firebaseProjectId: data.firebaseProjectId || '',
+    dominio: data.dominio || '',
+    cantidadLicencias: data.cantidadLicencias || 0,
+    cantidadInstalaciones: data.cantidadInstalaciones || 0,
+    observaciones: data.observaciones || '',
+    fechaCreacion: data.fechaCreacion || new Date().toISOString(),
+    ultimaModificacion: data.fechaActualizacion || data.ultimaModificacion || new Date().toISOString(),
+  };
+}
 
-/**
- * Servicio de Clientes para el Panel Maestro.
- * Se comunica exclusivamente a través de la API Express centralizada (/api/v1/clients),
- * garantizando que el navegador nunca acceda directamente a Firestore.
- */
 export const clientService = {
   /**
    * Genera un UUID estándar para cliente
@@ -21,24 +55,39 @@ export const clientService = {
   },
 
   /**
-   * Obtiene el listado completo de clientes
+   * Obtiene el listado completo de clientes directamente desde Firestore
    */
   async obtenerClientes(): Promise<Cliente[]> {
     try {
-      const response = await fetch(API_BASE, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al obtener clientes desde la API.');
+      // 1. Intentar API si existe
+      try {
+        const response = await fetch('/api/v1/clients', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.exito && Array.isArray(resData.data)) {
+            return resData.data as Cliente[];
+          }
+        }
+      } catch {
+        // Fallback a Firestore directo
       }
 
-      return resData.data as Cliente[];
+      // 2. Conexión Directa a Firestore
+      const clRef = collection(db, 'clientes');
+      try {
+        const q = query(clRef, orderBy('fechaCreacion', 'desc'));
+        const snap = await getDocs(q);
+        return snap.docs.map(docSnap => formatearCliente(docSnap.id, docSnap.data()));
+      } catch {
+        const snap = await getDocs(clRef);
+        return snap.docs.map(docSnap => formatearCliente(docSnap.id, docSnap.data()));
+      }
     } catch (error: any) {
       console.error('Error al obtener lista de clientes:', error);
-      throw new Error(error.message || 'No se pudo cargar la lista de clientes desde el servidor.');
+      throw new Error(error.message || 'No se pudo cargar la lista de clientes desde Firestore.');
     }
   },
 
@@ -47,21 +96,19 @@ export const clientService = {
    */
   async obtenerClientePorId(id: string): Promise<Cliente | null> {
     try {
-      const response = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (response.status === 404) {
-        return null;
+      const docSnap = await getDoc(doc(db, 'clientes', id));
+      if (docSnap.exists()) {
+        return formatearCliente(docSnap.id, docSnap.data());
       }
 
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al obtener cliente.');
+      // Buscar por uuidCliente
+      const q = query(collection(db, 'clientes'), where('uuidCliente', '==', id));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return formatearCliente(snap.docs[0].id, snap.docs[0].data());
       }
 
-      return resData.data as Cliente;
+      return null;
     } catch (error: any) {
       console.error(`Error obteniendo cliente ${id}:`, error);
       return null;
@@ -92,22 +139,50 @@ export const clientService = {
     userCorreo: string
   ): Promise<Cliente> {
     try {
-      const response = await fetch(API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...nuevoCliente,
-          userUid,
-          userCorreo,
-        }),
+      const uuidCliente = this.generarUuidCliente();
+      const clientId = doc(collection(db, 'clientes')).id;
+
+      const dataToSave = {
+        uuidCliente,
+        nombreEmpresa: nuevoCliente.nombreEmpresa,
+        nombreComercial: nuevoCliente.nombreComercial || '',
+        rnc: nuevoCliente.rnc || '',
+        telefono: nuevoCliente.telefono || '',
+        correo: nuevoCliente.correo || '',
+        direccion: nuevoCliente.direccion || '',
+        ciudad: nuevoCliente.ciudad || '',
+        pais: nuevoCliente.pais || '',
+        personaContacto: nuevoCliente.personaContacto || '',
+        plan: nuevoCliente.plan || 'anual',
+        tipo: nuevoCliente.tipo || 'hospital',
+        estado: 'activo',
+        firebaseProjectId: nuevoCliente.firebaseProjectId || '',
+        dominio: nuevoCliente.dominio || '',
+        cantidadLicencias: 0,
+        observaciones: nuevoCliente.observaciones || '',
+        fechaCreacion: new Date().toISOString(),
+        fechaActualizacion: new Date().toISOString(),
+        creadoPor: userCorreo,
+      };
+
+      await setDoc(doc(db, 'clientes', clientId), {
+        ...dataToSave,
+        fechaCreacionTimestamp: serverTimestamp(),
       });
 
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al crear el cliente.');
+      try {
+        await auditService.registrarAccion(
+          userUid,
+          userCorreo,
+          'Creación de Cliente',
+          'Clientes',
+          `Se registró el cliente ${nuevoCliente.nombreEmpresa} (UUID: ${uuidCliente})`
+        );
+      } catch (e) {
+        // No bloqueante
       }
 
-      return resData.data as Cliente;
+      return formatearCliente(clientId, dataToSave);
     } catch (error: any) {
       console.error('Error al crear cliente:', error);
       throw error;
@@ -139,19 +214,21 @@ export const clientService = {
     userCorreo: string
   ): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...datosActualizados,
-          userUid,
-          userCorreo,
-        }),
+      await updateDoc(doc(db, 'clientes', id), {
+        ...datosActualizados,
+        fechaActualizacion: new Date().toISOString(),
       });
 
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al actualizar el cliente.');
+      try {
+        await auditService.registrarAccion(
+          userUid,
+          userCorreo,
+          'Actualización de Cliente',
+          'Clientes',
+          `Se actualizaron los datos del cliente ${datosActualizados.nombreEmpresa}`
+        );
+      } catch (e) {
+        // No bloqueante
       }
     } catch (error: any) {
       console.error('Error al actualizar cliente:', error);
@@ -170,20 +247,21 @@ export const clientService = {
     userCorreo: string
   ): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE}/${encodeURIComponent(id)}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nuevoEstado,
-          nombreEmpresa,
-          userUid,
-          userCorreo,
-        }),
+      await updateDoc(doc(db, 'clientes', id), {
+        estado: nuevoEstado,
+        fechaActualizacion: new Date().toISOString(),
       });
 
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al cambiar estado del cliente.');
+      try {
+        await auditService.registrarAccion(
+          userUid,
+          userCorreo,
+          'Cambio de Estado de Cliente',
+          'Clientes',
+          `Cliente ${nombreEmpresa} (${id}) cambió a estado: ${nuevoEstado}`
+        );
+      } catch (e) {
+        // No bloqueante
       }
     } catch (error: any) {
       console.error('Error al cambiar estado del cliente:', error);
@@ -203,21 +281,22 @@ export const clientService = {
     userCorreo: string
   ): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uuidCliente,
-          nombreEmpresa,
-          cantidadLicencias,
+      if (cantidadLicencias > 0) {
+        throw new Error('No se puede eliminar un cliente con licencias activas asociadas.');
+      }
+
+      await deleteDoc(doc(db, 'clientes', id));
+
+      try {
+        await auditService.registrarAccion(
           userUid,
           userCorreo,
-        }),
-      });
-
-      const resData = await response.json();
-      if (!response.ok || !resData.exito) {
-        throw new Error(resData.mensaje || 'Error al eliminar cliente.');
+          'Eliminación de Cliente',
+          'Clientes',
+          `Se eliminó permanentemente el cliente ${nombreEmpresa} (UUID: ${uuidCliente})`
+        );
+      } catch (e) {
+        // No bloqueante
       }
     } catch (error: any) {
       console.error('Error al eliminar cliente:', error);

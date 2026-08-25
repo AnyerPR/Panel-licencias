@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HardDrive, Search, RefreshCw, CheckCircle2, XCircle, Clock, ShieldAlert } from 'lucide-react';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
 export interface InstalacionItem {
   id: string;
@@ -23,13 +25,32 @@ export const InstallationList: React.FC = () => {
   const cargarInstalaciones = async () => {
     try {
       setCargando(true);
-      const res = await fetch('/api/v1/installations');
-      const data = await res.json();
-      if (res.ok && data.exito) {
-        setInstalaciones(data.data || []);
+      // 1. Intentar API
+      try {
+        const res = await fetch('/api/v1/installations');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.exito && Array.isArray(data.data)) {
+            setInstalaciones(data.data);
+            return;
+          }
+        }
+      } catch {
+        // Fallback a Firestore directo
+      }
+
+      // 2. Conexión Directa a Firestore
+      const instRef = collection(db, 'instalaciones');
+      try {
+        const q = query(instRef, orderBy('fechaActivacion', 'desc'));
+        const snap = await getDocs(q);
+        setInstalaciones(snap.docs.map(d => ({ id: d.id, ...d.data() } as InstalacionItem)));
+      } catch {
+        const snap = await getDocs(instRef);
+        setInstalaciones(snap.docs.map(d => ({ id: d.id, ...d.data() } as InstalacionItem)));
       }
     } catch (err) {
-      console.error('Error cargando instalaciones desde la API:', err);
+      console.error('Error cargando instalaciones:', err);
     } finally {
       setCargando(false);
     }
