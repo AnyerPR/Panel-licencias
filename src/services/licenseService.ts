@@ -15,6 +15,7 @@ import {
 import { db } from '../config/firebase';
 import { Licencia, EstadoLicencia, TipoLicencia } from '../types';
 import { auditService } from './auditService';
+import { isStaticHost } from '../utils/envHelper';
 
 function calcularFechaExpiracion(tipo: TipoLicencia, duracionDiasPersonalizada?: number): Date {
   const fecha = new Date();
@@ -133,18 +134,20 @@ export const licenseService = {
    */
   async obtenerLicencias(clienteId?: string): Promise<Licencia[]> {
     try {
-      // 1. Intentar API backend si está disponible
-      try {
-        const url = clienteId ? `/api/v1/licenses?clienteId=${encodeURIComponent(clienteId)}` : '/api/v1/licenses';
-        const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.exito && Array.isArray(resData.data)) {
-            return resData.data as Licencia[];
+      // 1. Intentar API backend solo si no estamos en un host estático
+      if (!isStaticHost()) {
+        try {
+          const url = clienteId ? `/api/v1/licenses?clienteId=${encodeURIComponent(clienteId)}` : '/api/v1/licenses';
+          const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+          if (res.ok) {
+            const resData = await res.json();
+            if (resData.exito && Array.isArray(resData.data)) {
+              return resData.data as Licencia[];
+            }
           }
+        } catch {
+          // Fallback a Firestore directo
         }
-      } catch {
-        // Fallback a Firestore directo
       }
 
       // 2. Conexión Directa a Firestore

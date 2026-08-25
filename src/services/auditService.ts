@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { LogAuditoria } from '../types';
+import { isStaticHost } from '../utils/envHelper';
 
 export const auditService = {
   /**
@@ -17,20 +18,22 @@ export const auditService = {
    */
   async obtenerLogs(limite: number = 100): Promise<LogAuditoria[]> {
     try {
-      // 1. Intentar API si existe
-      try {
-        const response = await fetch(`/api/v1/audit?limit=${limite}`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (response.ok) {
-          const resData = await response.json();
-          if (resData.exito && Array.isArray(resData.data)) {
-            return resData.data as LogAuditoria[];
+      // 1. Intentar API solo si no estamos en un host estático
+      if (!isStaticHost()) {
+        try {
+          const response = await fetch(`/api/v1/audit?limit=${limite}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.exito && Array.isArray(resData.data)) {
+              return resData.data as LogAuditoria[];
+            }
           }
+        } catch {
+          // Fallback a Firestore
         }
-      } catch {
-        // Fallback a Firestore
       }
 
       // 2. Conexión Directa a Firestore

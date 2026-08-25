@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { DashboardStats, LogAuditoria } from '../types';
+import { isStaticHost } from '../utils/envHelper';
 
 export const dashboardService = {
   /**
@@ -14,20 +15,22 @@ export const dashboardService = {
    */
   async obtenerEstadisticas(): Promise<DashboardStats> {
     try {
-      // 1. Intentar API si existe
-      try {
-        const response = await fetch('/api/v1/dashboard/stats', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (response.ok) {
-          const resData = await response.json();
-          if (resData.exito && resData.data) {
-            return resData.data as DashboardStats;
+      // 1. Intentar API solo si no estamos en un host estático
+      if (!isStaticHost()) {
+        try {
+          const response = await fetch('/api/v1/dashboard/stats', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.exito && resData.data) {
+              return resData.data as DashboardStats;
+            }
           }
+        } catch {
+          // Fallback a cálculo directo
         }
-      } catch {
-        // Fallback a cálculo directo
       }
 
       // 2. Conexión Directa a Firestore
@@ -98,20 +101,22 @@ export const dashboardService = {
    */
   async obtenerActividadReciente(limiteAuditoria: number = 5): Promise<LogAuditoria[]> {
     try {
-      // 1. Intentar API si existe
-      try {
-        const response = await fetch(`/api/v1/dashboard/activity?limit=${limiteAuditoria}`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (response.ok) {
-          const resData = await response.json();
-          if (resData.exito && Array.isArray(resData.data)) {
-            return resData.data as LogAuditoria[];
+      // 1. Intentar API solo si no estamos en host estático
+      if (!isStaticHost()) {
+        try {
+          const response = await fetch(`/api/v1/dashboard/activity?limit=${limiteAuditoria}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.exito && Array.isArray(resData.data)) {
+              return resData.data as LogAuditoria[];
+            }
           }
+        } catch {
+          // Fallback a Firestore
         }
-      } catch {
-        // Fallback a Firestore
       }
 
       // 2. Conexión Directa a Firestore

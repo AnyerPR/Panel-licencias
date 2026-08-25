@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { HardDrive, Search, RefreshCw, CheckCircle2, XCircle, Clock, ShieldAlert } from 'lucide-react';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { isStaticHost } from '../../utils/envHelper';
 
 export interface InstalacionItem {
   id: string;
@@ -25,18 +26,20 @@ export const InstallationList: React.FC = () => {
   const cargarInstalaciones = async () => {
     try {
       setCargando(true);
-      // 1. Intentar API
-      try {
-        const res = await fetch('/api/v1/installations');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.exito && Array.isArray(data.data)) {
-            setInstalaciones(data.data);
-            return;
+      // 1. Intentar API solo si no estamos en host estático
+      if (!isStaticHost()) {
+        try {
+          const res = await fetch('/api/v1/installations');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.exito && Array.isArray(data.data)) {
+              setInstalaciones(data.data);
+              return;
+            }
           }
+        } catch {
+          // Fallback a Firestore directo
         }
-      } catch {
-        // Fallback a Firestore directo
       }
 
       // 2. Conexión Directa a Firestore

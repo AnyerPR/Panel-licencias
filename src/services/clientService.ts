@@ -14,6 +14,7 @@ import {
 import { db } from '../config/firebase';
 import { Cliente, EstadoCliente } from '../types';
 import { auditService } from './auditService';
+import { isStaticHost } from '../utils/envHelper';
 
 function formatearCliente(docId: string, data: any): Cliente {
   return {
@@ -59,20 +60,22 @@ export const clientService = {
    */
   async obtenerClientes(): Promise<Cliente[]> {
     try {
-      // 1. Intentar API si existe
-      try {
-        const response = await fetch('/api/v1/clients', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (response.ok) {
-          const resData = await response.json();
-          if (resData.exito && Array.isArray(resData.data)) {
-            return resData.data as Cliente[];
+      // 1. Intentar API solo si no es un host estático
+      if (!isStaticHost()) {
+        try {
+          const response = await fetch('/api/v1/clients', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.exito && Array.isArray(resData.data)) {
+              return resData.data as Cliente[];
+            }
           }
+        } catch {
+          // Fallback a Firestore directo
         }
-      } catch {
-        // Fallback a Firestore directo
       }
 
       // 2. Conexión Directa a Firestore
